@@ -1,23 +1,19 @@
 const socket = io();
 
-const roomInput =
-    document.getElementById(
-        "roomInput"
-    );
+const btn =
+    document.getElementById("btn");
 
-const joinBtn =
-    document.getElementById(
-        "joinBtn"
-    );
+const me =
+    document.getElementById("me");
 
-const videos =
-    document.getElementById(
-        "videos"
-    );
-
-const peers = {};
+const other =
+    document.getElementById("other");
 
 let localStream;
+
+let peer;
+
+let partnerId;
 
 const servers = {
 
@@ -26,6 +22,11 @@ const servers = {
         {
             urls:
                 "stun:stun.l.google.com:19302"
+        },
+
+        {
+            urls:
+                "stun:global.stun.twilio.com:3478"
         },
 
         {
@@ -44,169 +45,171 @@ const servers = {
                 "openrelayproject",
             credential:
                 "openrelayproject"
+        },
+
+        {
+            urls:
+                "turn:openrelay.metered.ca:443?transport=tcp",
+            username:
+                "openrelayproject",
+            credential:
+                "openrelayproject"
         }
     ]
 };
 
-joinBtn.onclick =
-    async () => {
+btn.onclick = async () => {
 
-        const roomId =
-            roomInput.value.trim();
+    btn.style.display = "none";
 
-        if (!roomId) {
+    localStream =
+        await navigator.mediaDevices
+            .getUserMedia({
 
-            alert(
-                "Enter room name"
+                video: true,
+                audio: true
+            });
+
+    me.srcObject =
+        localStream;
+
+    console.log("CAMERA READY");
+
+    socket.emit("ready");
+};
+
+socket.on("matched", async data => {
+
+    console.log(
+        "MATCHED"
+    );
+
+    partnerId =
+        data.partner;
+
+    createPeer();
+
+    if (data.initiator) {
+
+        console.log(
+            "CREATING OFFER"
+        );
+
+        const offer =
+            await peer.createOffer();
+
+        await peer
+            .setLocalDescription(
+                offer
             );
 
-            return;
+        socket.emit("signal", {
+
+            to: partnerId,
+
+            signal: offer
+        });
+    }
+});
+
+socket.on("signal", async data => {
+
+    console.log(
+        "SIGNAL:",
+        data.signal
+    );
+
+    if (
+        data.signal.type ===
+        "offer"
+    ) {
+
+        console.log(
+            "RECEIVED OFFER"
+        );
+
+        if (!peer) {
+
+            createPeer();
         }
 
-        localStream =
-            await navigator
-                .mediaDevices
-                .getUserMedia({
-
-                    video: true,
-                    audio: true
-                });
-
-        addMyVideo();
-
-        socket.emit(
-            "join-room",
-            roomId
-        );
-    };
-
-socket.on(
-    "all-users",
-    async users => {
-
-        for (const userId of users) {
-
-            createPeer(
-                userId,
-                true
+        await peer
+            .setRemoteDescription(
+                new RTCSessionDescription(
+                    data.signal
+                )
             );
-        }
+
+        const answer =
+            await peer
+                .createAnswer();
+
+        await peer
+            .setLocalDescription(
+                answer
+            );
+
+        socket.emit("signal", {
+
+            to: data.from,
+
+            signal: answer
+        });
     }
-);
 
-socket.on(
-    "user-joined",
-    userId => {
+    else if (
+        data.signal.type ===
+        "answer"
+    ) {
 
-        createPeer(
-            userId,
-            false
+        console.log(
+            "RECEIVED ANSWER"
         );
+
+        await peer
+            .setRemoteDescription(
+                new RTCSessionDescription(
+                    data.signal
+                )
+            );
     }
-);
 
-socket.on(
-    "signal",
-    async data => {
+    else if (
+        data.signal.candidate
+    ) {
 
-        const peer =
-            peers[data.from];
+        console.log(
+            "RECEIVED ICE"
+        );
 
-        if (
-            data.signal.type ===
-            "offer"
-        ) {
+        try {
 
             await peer
-                .setRemoteDescription(
-                    new RTCSessionDescription(
+                .addIceCandidate(
+                    new RTCIceCandidate(
                         data.signal
                     )
                 );
 
-            const answer =
-                await peer
-                    .createAnswer();
+        } catch (err) {
 
-            await peer
-                .setLocalDescription(
-                    answer
-                );
-
-            socket.emit(
-                "signal",
-                {
-
-                    to: data.from,
-
-                    signal:
-                        answer
-                }
-            );
-        }
-
-        else if (
-            data.signal.type ===
-            "answer"
-        ) {
-
-            await peer
-                .setRemoteDescription(
-                    new RTCSessionDescription(
-                        data.signal
-                    )
-                );
-        }
-
-        else if (
-            data.signal.candidate
-        ) {
-
-            try {
-
-                await peer
-                    .addIceCandidate(
-                        new RTCIceCandidate(
-                            data.signal
-                        )
-                    );
-
-            } catch (err) {
-
-                console.log(err);
-            }
+            console.log(err);
         }
     }
-);
+});
 
-socket.on(
-    "user-left",
-    userId => {
+function createPeer() {
 
-        if (peers[userId]) {
+    console.log(
+        "CREATING PEER"
+    );
 
-            peers[userId]
-                .close();
-
-            delete peers[userId];
-        }
-    }
-);
-
-function createPeer(
-    userId,
-    initiator
-) {
-
-    const peer =
+    peer =
         new RTCPeerConnection(
             servers
         );
 
-    peers[userId] = peer;
-
-    localStream
-        .getTracks()
+    localStream.getTracks()
         .forEach(track => {
 
             peer.addTrack(
@@ -215,112 +218,53 @@ function createPeer(
             );
         });
 
-    peer.ontrack =
-        event => {
+    peer.ontrack = async e => {
 
-            addVideo(
-                event.streams[0],
-                userId
-            );
-        };
+        console.log(
+            "REMOTE STREAM RECEIVED"
+        );
+
+        other.srcObject =
+            e.streams[0];
+
+        try {
+
+            await other.play();
+
+        } catch (err) {
+
+            console.log(err);
+        }
+    };
 
     peer.onicecandidate =
-        event => {
+        e => {
 
-            if (event.candidate) {
+            if (e.candidate) {
+
+                console.log(
+                    "SENDING ICE"
+                );
 
                 socket.emit(
                     "signal",
                     {
 
-                        to: userId,
+                        to: partnerId,
 
                         signal:
-                            event
-                                .candidate
+                            e.candidate
                     }
                 );
             }
         };
 
-    if (initiator) {
+    peer.onconnectionstatechange =
+        () => {
 
-        createOffer(
-            peer,
-            userId
-        );
-    }
-}
-
-async function createOffer(
-    peer,
-    userId
-) {
-
-    const offer =
-        await peer
-            .createOffer();
-
-    await peer
-        .setLocalDescription(
-            offer
-        );
-
-    socket.emit(
-        "signal",
-        {
-
-            to: userId,
-
-            signal: offer
-        }
-    );
-}
-
-function addMyVideo() {
-
-    const video =
-        document.createElement(
-            "video"
-        );
-
-    video.srcObject =
-        localStream;
-
-    video.autoplay = true;
-
-    video.muted = true;
-
-    video.playsInline = true;
-
-    videos.appendChild(video);
-}
-
-function addVideo(
-    stream,
-    userId
-) {
-
-    let video =
-        document.getElementById(
-            userId
-        );
-
-    if (!video) {
-
-        video =
-            document.createElement(
-                "video"
+            console.log(
+                "STATE:",
+                peer.connectionState
             );
-
-        video.id = userId;
-
-        video.autoplay = true;
-
-        video.playsInline = true;
-
-        videos.appendChild(video);
-    }
-
-    video.srcObject = stream;
+        };
 }
