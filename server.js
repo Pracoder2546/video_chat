@@ -97,9 +97,12 @@ io.on("connection", socket => {
     });
 });
 
-http.listen(3000, () => {
+const PORT =
+    process.env.PORT || 3000;
+
+http.listen(PORT, () => {
 
     console.log(
-        "RUNNING ON 3000"
+        "RUNNING"
     );
 });
