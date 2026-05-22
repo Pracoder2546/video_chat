@@ -1,0 +1,28 @@
+body {
+
+    background: black;
+
+    color: white;
+
+    text-align: center;
+
+    font-family: Arial;
+}
+
+.videos {
+
+    display: flex;
+
+    justify-content: center;
+
+    gap: 20px;
+
+    margin-top: 20px;
+}
+
+video {
+
+    width: 400px;
+
+    background: gray;
+}

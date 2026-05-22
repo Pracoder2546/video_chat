@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+    <title>Video Chat</title>
+
+    <link
+        rel="stylesheet"
+        href="style.css">
+
+</head>
+
+<body>
+
+    <h1>Video Chat</h1>
+
+    <button id="btn">
+        Start
+    </button>
+
+    <div class="videos">
+
+        <video
+            id="me"
+            autoplay
+            muted
+            playsinline>
+        </video>
+
+        <video
+            id="other"
+            autoplay
+            playsinline>
+        </video>
+
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+
+    <script src="script.js"></script>
+
+</body>
+
+</html>
