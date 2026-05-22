@@ -1,19 +1,23 @@
 const socket = io();
 
-const btn =
-    document.getElementById("btn");
+const roomInput =
+    document.getElementById(
+        "roomInput"
+    );
 
-const me =
-    document.getElementById("me");
+const joinBtn =
+    document.getElementById(
+        "joinBtn"
+    );
 
-const other =
-    document.getElementById("other");
+const videos =
+    document.getElementById(
+        "videos"
+    );
+
+const peers = {};
 
 let localStream;
-
-let peer;
-
-let partnerId;
 
 const servers = {
 
@@ -22,11 +26,6 @@ const servers = {
         {
             urls:
                 "stun:stun.l.google.com:19302"
-        },
-
-        {
-            urls:
-                "stun:global.stun.twilio.com:3478"
         },
 
         {
@@ -45,171 +44,169 @@ const servers = {
                 "openrelayproject",
             credential:
                 "openrelayproject"
-        },
-
-        {
-            urls:
-                "turn:openrelay.metered.ca:443?transport=tcp",
-            username:
-                "openrelayproject",
-            credential:
-                "openrelayproject"
         }
     ]
 };
 
-btn.onclick = async () => {
+joinBtn.onclick =
+    async () => {
 
-    btn.style.display = "none";
+        const roomId =
+            roomInput.value.trim();
 
-    localStream =
-        await navigator.mediaDevices
-            .getUserMedia({
+        if (!roomId) {
 
-                video: true,
-                audio: true
-            });
-
-    me.srcObject =
-        localStream;
-
-    console.log("CAMERA READY");
-
-    socket.emit("ready");
-};
-
-socket.on("matched", async data => {
-
-    console.log(
-        "MATCHED"
-    );
-
-    partnerId =
-        data.partner;
-
-    createPeer();
-
-    if (data.initiator) {
-
-        console.log(
-            "CREATING OFFER"
-        );
-
-        const offer =
-            await peer.createOffer();
-
-        await peer
-            .setLocalDescription(
-                offer
+            alert(
+                "Enter room name"
             );
 
-        socket.emit("signal", {
-
-            to: partnerId,
-
-            signal: offer
-        });
-    }
-});
-
-socket.on("signal", async data => {
-
-    console.log(
-        "SIGNAL:",
-        data.signal
-    );
-
-    if (
-        data.signal.type ===
-        "offer"
-    ) {
-
-        console.log(
-            "RECEIVED OFFER"
-        );
-
-        if (!peer) {
-
-            createPeer();
+            return;
         }
 
-        await peer
-            .setRemoteDescription(
-                new RTCSessionDescription(
-                    data.signal
-                )
-            );
+        localStream =
+            await navigator
+                .mediaDevices
+                .getUserMedia({
 
-        const answer =
-            await peer
-                .createAnswer();
+                    video: true,
+                    audio: true
+                });
 
-        await peer
-            .setLocalDescription(
-                answer
-            );
+        addMyVideo();
 
-        socket.emit("signal", {
-
-            to: data.from,
-
-            signal: answer
-        });
-    }
-
-    else if (
-        data.signal.type ===
-        "answer"
-    ) {
-
-        console.log(
-            "RECEIVED ANSWER"
+        socket.emit(
+            "join-room",
+            roomId
         );
+    };
 
-        await peer
-            .setRemoteDescription(
-                new RTCSessionDescription(
-                    data.signal
-                )
+socket.on(
+    "all-users",
+    async users => {
+
+        for (const userId of users) {
+
+            createPeer(
+                userId,
+                true
             );
+        }
     }
+);
 
-    else if (
-        data.signal.candidate
-    ) {
+socket.on(
+    "user-joined",
+    userId => {
 
-        console.log(
-            "RECEIVED ICE"
+        createPeer(
+            userId,
+            false
         );
+    }
+);
 
-        try {
+socket.on(
+    "signal",
+    async data => {
+
+        const peer =
+            peers[data.from];
+
+        if (
+            data.signal.type ===
+            "offer"
+        ) {
 
             await peer
-                .addIceCandidate(
-                    new RTCIceCandidate(
+                .setRemoteDescription(
+                    new RTCSessionDescription(
                         data.signal
                     )
                 );
 
-        } catch (err) {
+            const answer =
+                await peer
+                    .createAnswer();
 
-            console.log(err);
+            await peer
+                .setLocalDescription(
+                    answer
+                );
+
+            socket.emit(
+                "signal",
+                {
+
+                    to: data.from,
+
+                    signal:
+                        answer
+                }
+            );
+        }
+
+        else if (
+            data.signal.type ===
+            "answer"
+        ) {
+
+            await peer
+                .setRemoteDescription(
+                    new RTCSessionDescription(
+                        data.signal
+                    )
+                );
+        }
+
+        else if (
+            data.signal.candidate
+        ) {
+
+            try {
+
+                await peer
+                    .addIceCandidate(
+                        new RTCIceCandidate(
+                            data.signal
+                        )
+                    );
+
+            } catch (err) {
+
+                console.log(err);
+            }
         }
     }
-});
+);
 
-function createPeer() {
+socket.on(
+    "user-left",
+    userId => {
 
-    console.log(
-        "CREATING PEER"
-    );
+        if (peers[userId]) {
 
-    peer =
+            peers[userId]
+                .close();
+
+            delete peers[userId];
+        }
+    }
+);
+
+function createPeer(
+    userId,
+    initiator
+) {
+
+    const peer =
         new RTCPeerConnection(
             servers
         );
 
-    localStream.getTracks()
+    peers[userId] = peer;
+
+    localStream
+        .getTracks()
         .forEach(track => {
 
             peer.addTrack(
@@ -218,53 +215,112 @@ function createPeer() {
             );
         });
 
-    peer.ontrack = async e => {
+    peer.ontrack =
+        event => {
 
-        console.log(
-            "REMOTE STREAM RECEIVED"
-        );
-
-        other.srcObject =
-            e.streams[0];
-
-        try {
-
-            await other.play();
-
-        } catch (err) {
-
-            console.log(err);
-        }
-    };
+            addVideo(
+                event.streams[0],
+                userId
+            );
+        };
 
     peer.onicecandidate =
-        e => {
+        event => {
 
-            if (e.candidate) {
-
-                console.log(
-                    "SENDING ICE"
-                );
+            if (event.candidate) {
 
                 socket.emit(
                     "signal",
                     {
 
-                        to: partnerId,
+                        to: userId,
 
                         signal:
-                            e.candidate
+                            event
+                                .candidate
                     }
                 );
             }
         };
 
-    peer.onconnectionstatechange =
-        () => {
+    if (initiator) {
 
-            console.log(
-                "STATE:",
-                peer.connectionState
+        createOffer(
+            peer,
+            userId
+        );
+    }
+}
+
+async function createOffer(
+    peer,
+    userId
+) {
+
+    const offer =
+        await peer
+            .createOffer();
+
+    await peer
+        .setLocalDescription(
+            offer
+        );
+
+    socket.emit(
+        "signal",
+        {
+
+            to: userId,
+
+            signal: offer
+        }
+    );
+}
+
+function addMyVideo() {
+
+    const video =
+        document.createElement(
+            "video"
+        );
+
+    video.srcObject =
+        localStream;
+
+    video.autoplay = true;
+
+    video.muted = true;
+
+    video.playsInline = true;
+
+    videos.appendChild(video);
+}
+
+function addVideo(
+    stream,
+    userId
+) {
+
+    let video =
+        document.getElementById(
+            userId
+        );
+
+    if (!video) {
+
+        video =
+            document.createElement(
+                "video"
             );
-        };
+
+        video.id = userId;
+
+        video.autoplay = true;
+
+        video.playsInline = true;
+
+        videos.appendChild(video);
+    }
+
+    video.srcObject = stream;
 }
