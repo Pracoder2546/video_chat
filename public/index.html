@@ -4,42 +4,31 @@
 
 <head>
 
-    <title>Video Chat</title>
+    <title>Group Video Chat</title>
 
     <link
         rel="stylesheet"
-        href="style.css">
+        href="/style.css">
 
 </head>
 
 <body>
 
-    <h1>Video Chat</h1>
+    <h1>Group Video Chat</h1>
 
-    <button id="btn">
-        Start
+    <input
+        id="roomInput"
+        placeholder="Room name">
+
+    <button id="joinBtn">
+        Join Room
     </button>
 
-    <div class="videos">
-
-        <video
-            id="me"
-            autoplay
-            muted
-            playsinline>
-        </video>
-
-        <video
-            id="other"
-            autoplay
-            playsinline>
-        </video>
-
-    </div>
+    <div id="videos"></div>
 
     <script src="/socket.io/socket.io.js"></script>
 
-    <script src="script.js"></script>
+    <script src="/script.js"></script>
 
 </body>
 
