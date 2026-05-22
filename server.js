@@ -8,65 +8,42 @@ const io = require("socket.io")(http);
 
 app.use(express.static("public"));
 
-let waitingUser = null;
+const rooms = {};
 
 io.on("connection", socket => {
 
-    console.log("CONNECTED:", socket.id);
+    console.log(
+        "CONNECTED:",
+        socket.id
+    );
 
-    socket.on("ready", () => {
+    socket.on("join-room", roomId => {
 
-        console.log(
-            "READY:",
-            socket.id
+        socket.join(roomId);
+
+        socket.roomId = roomId;
+
+        if (!rooms[roomId]) {
+
+            rooms[roomId] = [];
+        }
+
+        rooms[roomId].push(socket.id);
+
+        const otherUsers =
+            rooms[roomId].filter(
+                id => id !== socket.id
+            );
+
+        socket.emit(
+            "all-users",
+            otherUsers
         );
 
-        if (waitingUser) {
-
-            const partner =
-                waitingUser;
-
-            waitingUser = null;
-
-            socket.partner =
-                partner.id;
-
-            partner.partner =
-                socket.id;
-
-            console.log(
-                "MATCHING USERS"
-            );
-
-            // SEND TO BOTH
-            io.to(socket.id).emit(
-                "matched",
-                {
-                    partner:
-                        partner.id,
-
-                    initiator: true
-                }
-            );
-
-            io.to(partner.id).emit(
-                "matched",
-                {
-                    partner:
-                        socket.id,
-
-                    initiator: false
-                }
-            );
-
-        } else {
-
-            waitingUser = socket;
-
-            console.log(
-                "WAITING FOR PARTNER"
-            );
-        }
+        socket.to(roomId).emit(
+            "user-joined",
+            socket.id
+        );
     });
 
     socket.on("signal", data => {
@@ -87,12 +64,32 @@ io.on("connection", socket => {
             socket.id
         );
 
+        const roomId =
+            socket.roomId;
+
         if (
-            waitingUser &&
-            waitingUser.id === socket.id
+            roomId &&
+            rooms[roomId]
         ) {
 
-            waitingUser = null;
+            rooms[roomId] =
+                rooms[roomId].filter(
+                    id =>
+                        id !== socket.id
+                );
+
+            socket.to(roomId).emit(
+                "user-left",
+                socket.id
+            );
+
+            if (
+                rooms[roomId]
+                    .length === 0
+            ) {
+
+                delete rooms[roomId];
+            }
         }
     });
 });
@@ -103,6 +100,7 @@ const PORT =
 http.listen(PORT, () => {
 
     console.log(
-        "RUNNING"
+        "RUNNING ON",
+        PORT
     );
 });
